@@ -2272,6 +2272,16 @@ export const t2vModels = [
     }
   },
   {
+    "id": "veo3.1-lite-text-to-video",
+    "name": "Veo 3.1 Lite",
+    "inputs": {
+      "prompt": { "type": "string", "title": "Prompt", "name": "prompt", "description": "Text prompt describing the video." },
+      "aspect_ratio": { "enum": ["16:9", "9:16"], "title": "Aspect Ratio", "name": "aspect_ratio", "type": "string", "description": "Aspect ratio of the output video.", "default": "16:9" },
+      "duration": { "enum": [8], "title": "Duration", "name": "duration", "type": "int", "description": "The duration of the generated video in seconds", "default": 8 },
+      "resolution": { "enum": ["1080p"], "title": "Resolution", "name": "resolution", "type": "string", "description": "The resolution of the generated video.", "default": "1080p" }
+    }
+  },
+  {
     "id": "runway-text-to-video",
     "name": "Runway Gen-3",
     "inputs": {
@@ -6668,6 +6678,53 @@ export const i2vModels = [
         "examples": [
           "Scene: Lantern festival by the river at night.\nCharacters: Young boy with his grandmother.\nAction: Camera starts behind them → tracks one lantern downstream → lift to sky full of lights.\nLighting: Warm candlelight vs cool night reflections.\nAudio: Gentle music, water flow.\nDialogue:\nGrandmother: “Every lantern carries a wish.”\nBoy: “Then mine’s for you to stay forever.”\nGrandmother (smiling): “I’ll be right there, glowing among them.”"
         ]
+      },
+      "aspect_ratio": {
+        "type": "string",
+        "title": "Aspect Ratio",
+        "name": "aspect_ratio",
+        "description": "Aspect ratio of the output video.",
+        "enum": [
+          "16:9",
+          "9:16"
+        ],
+        "default": "16:9"
+      },
+      "duration": {
+        "type": "int",
+        "title": "Duration",
+        "name": "duration",
+        "description": "The duration of the generated video in seconds",
+        "enum": [
+          8
+        ],
+        "default": 8
+      },
+      "resolution": {
+        "type": "string",
+        "title": "Resolution",
+        "name": "resolution",
+        "description": "The resolution of the generated video.",
+        "enum": [
+          "1080p"
+        ],
+        "default": "1080p"
+      }
+    }
+  },
+  {
+    "id": "veo3.1-lite-image-to-video",
+    "name": "Veo3.1 Lite Image To Video",
+    "endpoint": "veo3.1-lite-image-to-video",
+    "family": "veo3.1",
+    "imageField": "image_url",
+    "hasPrompt": true,
+    "inputs": {
+      "prompt": {
+        "type": "string",
+        "title": "Prompt",
+        "name": "prompt",
+        "description": "Text prompt describing the video."
       },
       "aspect_ratio": {
         "type": "string",

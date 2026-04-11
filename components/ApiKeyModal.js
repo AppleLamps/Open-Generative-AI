@@ -26,7 +26,7 @@ export default function ApiKeyModal({ onSave }) {
             Open Higgsfield AI
           </h1>
           <p className="text-white/40 text-sm">
-            Enter your <a href="https://muapi.ai" target="_blank" rel="noreferrer" className="text-[#d9ff00] hover:underline">Muapi.ai</a> API key to start generating
+            Enter your <a href="https://muapi.ai/access-keys" target="_blank" rel="noreferrer" className="text-[#d9ff00] hover:underline">Muapi.ai</a> API key to start generating
           </p>
         </div>
 
@@ -54,7 +54,7 @@ export default function ApiKeyModal({ onSave }) {
 
           <p className="text-center text-xs text-white/30">
             Don&apos;t have a key?{' '}
-            <a href="https://muapi.ai" target="_blank" rel="noreferrer" className="text-[#d9ff00] hover:underline">
+            <a href="https://muapi.ai/access-keys" target="_blank" rel="noreferrer" className="text-[#d9ff00] hover:underline">
               Get one free at Muapi.ai →
             </a>
           </p>
