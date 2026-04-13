@@ -347,3 +347,5 @@ Built with [Muapi.ai](https://muapi.ai) — the unified API for AI image and vid
 
 ---
 *Looking for a free Higgsfield AI, Freepik, Krea, Openart AI alternative? Open Generative AI is an open-source AI image and video generation studio and Higgsfield AI, Freepik, Krea, Openart AI replacement that you can self-host, customize, and extend.*
+
+This project is an independent, experimental, and open-source initiative and is not affiliated with, endorsed by, or associated with Higgsfield Inc., Freepik, Krea AI, OpenArt AI, or any of their respective companies, products, or services. Any references to third-party platforms, models, or technologies are made solely for interoperability, benchmarking, research, or educational purposes. All trademarks, logos, and brand names are the property of their respective owners. If any content in this repository creates confusion or raises concerns, please contact us and we will promptly review and address it.
