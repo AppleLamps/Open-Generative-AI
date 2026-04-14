@@ -245,7 +245,7 @@ export class MuapiClient {
         const finalPayload = {};
 
         // Only include prompt if the model supports it and one was provided
-        if (params.prompt) finalPayload.prompt = params.prompt;
+        finalPayload.prompt = params.prompt || '';
 
         // Place the uploaded image(s) in the correct field for this model
         const imageField = modelInfo?.imageField || 'image_url';
@@ -331,6 +331,7 @@ export class MuapiClient {
         if (params.resolution) finalPayload.resolution = params.resolution;
         if (params.quality) finalPayload.quality = params.quality;
         if (params.mode) finalPayload.mode = params.mode;
+        if (params.name) finalPayload.name = params.name;
 
         console.log('[Muapi] I2V Request:', url);
         console.log('[Muapi] I2V Payload:', finalPayload);

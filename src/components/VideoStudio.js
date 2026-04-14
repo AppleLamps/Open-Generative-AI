@@ -17,6 +17,7 @@ export function VideoStudio() {
     let selectedResolution = defaultModel.inputs?.resolution?.default || '';
     let selectedQuality = defaultModel.inputs?.quality?.default || '';
     let selectedMode = '';
+    let selectedEffectName = '';
     let lastGenerationId = null;
     let lastGenerationModel = null;
     let dropdownOpen = null;
@@ -34,6 +35,10 @@ export function VideoStudio() {
     const getQualitiesForModel = (id) => {
         const model = getCurrentModels().find(m => m.id === id);
         return model?.inputs?.quality?.enum || [];
+    };
+    const getEffectNamesForModel = (id) => {
+        const model = getCurrentModels().find(m => m.id === id);
+        return model?.inputs?.name?.enum || [];
     };
 
     // ==========================================
@@ -291,12 +296,17 @@ export function VideoStudio() {
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="opacity-60 text-secondary"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
     `, selectedMode || 'normal', 'v-mode-btn');
 
+    const effectNameBtn = createControlBtn(`
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="opacity-60 text-secondary"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z"/></svg>
+    `, 'Effect', 'v-effect-btn', 'Select effect type');
+
     controlsLeft.appendChild(modelBtn);
     controlsLeft.appendChild(arBtn);
     controlsLeft.appendChild(durationBtn);
     controlsLeft.appendChild(resolutionBtn);
     controlsLeft.appendChild(qualityBtn);
-    
+    controlsLeft.appendChild(effectNameBtn);
+
     // Advanced options toggle button
     const advancedBtn = createControlBtn(`
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="opacity-60 text-secondary"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 001.82-.33 1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-1.82.33A1.65 1.65 0 0019.4 9a1.65 1.65 0 00-1.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
@@ -310,6 +320,7 @@ export function VideoStudio() {
     resolutionBtn.style.display = initResolutions.length > 0 ? 'flex' : 'none';
     qualityBtn.style.display = 'none';
     modeBtn.style.display = getModesForModel(defaultModel.id).length > 0 ? 'flex' : 'none';
+    effectNameBtn.style.display = 'none';
 
     const generateBtn = document.createElement('button');
     generateBtn.className = 'bg-primary text-black px-6 md:px-8 py-3 md:py-3.5 rounded-xl md:rounded-[1.5rem] font-black text-sm md:text-base hover:shadow-glow hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2.5 w-full sm:w-auto shadow-lg';
@@ -338,6 +349,7 @@ export function VideoStudio() {
             resolutionBtn.style.display = 'none';
             qualityBtn.style.display = 'none';
             modeBtn.style.display = 'none';
+            effectNameBtn.style.display = 'none';
             extendBanner.classList.add('hidden');
             extendBanner.classList.remove('flex');
             return;
@@ -393,6 +405,17 @@ export function VideoStudio() {
         } else {
             selectedMode = '';
             modeBtn.style.display = 'none';
+        }
+
+        // Effect name (ai-video-effects / motion-controls)
+        const effectNames = getEffectNamesForModel(modelId);
+        if (effectNames.length > 0) {
+            selectedEffectName = model?.inputs?.name?.default || effectNames[0];
+            document.getElementById('v-effect-btn-label').textContent = selectedEffectName;
+            effectNameBtn.style.display = 'flex';
+        } else {
+            selectedEffectName = '';
+            effectNameBtn.style.display = 'none';
         }
 
         // Extend banner (extend model only)
@@ -617,6 +640,29 @@ export function VideoStudio() {
                 list.appendChild(item);
             });
             dropdown.appendChild(list);
+
+        } else if (type === 'effect') {
+            dropdown.classList.add('max-w-[240px]');
+            dropdown.classList.remove('max-w-[200px]');
+            dropdown.innerHTML = `<div class="text-[10px] font-bold text-secondary uppercase tracking-widest px-3 py-2 border-b border-white/5 mb-2">Effect Type</div>`;
+            const list = document.createElement('div');
+            list.className = 'flex flex-col gap-1 max-h-[50vh] overflow-y-auto custom-scrollbar';
+            getEffectNamesForModel(selectedModel).forEach(e => {
+                const item = document.createElement('div');
+                item.className = 'flex items-center justify-between p-3 hover:bg-white/5 rounded-2xl cursor-pointer transition-all group';
+                item.innerHTML = `
+                    <span class="text-xs font-bold text-white opacity-80 group-hover:opacity-100">${e}</span>
+                    ${selectedEffectName === e ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d9ff00" stroke-width="4"><polyline points="20 6 9 17 4 12"/></svg>' : ''}
+                `;
+                item.onclick = (ev) => {
+                    ev.stopPropagation();
+                    selectedEffectName = e;
+                    document.getElementById('v-effect-btn-label').textContent = e;
+                    closeDropdown();
+                };
+                list.appendChild(item);
+            });
+            dropdown.appendChild(list);
         }
 
         // Position dropdown
@@ -650,6 +696,7 @@ export function VideoStudio() {
     resolutionBtn.onclick = toggleDropdown('resolution', resolutionBtn);
     qualityBtn.onclick = toggleDropdown('quality', qualityBtn);
     modeBtn.onclick = toggleDropdown('mode', modeBtn);
+    effectNameBtn.onclick = toggleDropdown('effect', effectNameBtn);
 
     window.addEventListener('click', closeDropdown);
     container.appendChild(dropdown);
@@ -977,7 +1024,7 @@ export function VideoStudio() {
                     image_url: uploadedImageUrl,
                     onRequestId,
                 };
-                if (prompt) i2vParams.prompt = prompt;
+                i2vParams.prompt = prompt || '';
                 i2vParams.aspect_ratio = selectedAr;
                 const durations = getCurrentDurations(selectedModel);
                 if (durations.length > 0) i2vParams.duration = selectedDuration;
@@ -985,6 +1032,7 @@ export function VideoStudio() {
                 if (resolutions.length > 0) i2vParams.resolution = selectedResolution;
                 if (selectedQuality) i2vParams.quality = selectedQuality;
                 if (selectedMode) i2vParams.mode = selectedMode;
+                if (selectedEffectName) i2vParams.name = selectedEffectName;
 
                 const res = await muapi.generateI2V(i2vParams);
                 console.log('[VideoStudio] I2V response:', res);
