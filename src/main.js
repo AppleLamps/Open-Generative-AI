@@ -1,36 +1,57 @@
 import './style.css';
 import { Header } from './components/Header.js';
 import { ImageStudio } from './components/ImageStudio.js';
+import { SettingsModal } from './components/SettingsModal.js';
 
 const app = document.querySelector('#app');
 let contentArea;
+let activeScreen = null;
+let navigationToken = 0;
+
+function mountScreen(screen, token) {
+  if (!contentArea || token !== navigationToken) {
+    screen?.destroy?.();
+    return;
+  }
+
+  const element = screen?.element || screen;
+  if (!element) return;
+
+  contentArea.appendChild(element);
+  activeScreen = screen;
+}
 
 // Router
 function navigate(page) {
   if (!contentArea) return;
+  navigationToken += 1;
+  const token = navigationToken;
+
+  activeScreen?.destroy?.();
+  activeScreen = null;
   contentArea.innerHTML = '';
 
   if (page === 'image') {
-    contentArea.appendChild(ImageStudio());
+    mountScreen(ImageStudio(), token);
   } else if (page === 'video') {
     import('./components/VideoStudio.js').then(({ VideoStudio }) => {
-      contentArea.appendChild(VideoStudio());
+      mountScreen(VideoStudio(), token);
     });
   } else if (page === 'cinema') {
     import('./components/CinemaStudio.js').then(({ CinemaStudio }) => {
-      contentArea.appendChild(CinemaStudio());
+      mountScreen(CinemaStudio(), token);
     });
   } else if (page === 'lipsync') {
     import('./components/LipSyncStudio.js').then(({ LipSyncStudio }) => {
-      contentArea.appendChild(LipSyncStudio());
+      mountScreen(LipSyncStudio(), token);
     });
   } else if (page === 'workflows') {
     import('./components/WorkflowStudio.js').then(({ WorkflowStudio }) => {
-      contentArea.appendChild(WorkflowStudio());
+      mountScreen(WorkflowStudio(), token);
     });
   } else if (page === 'agents') {
     import('./components/AgentStudio.js').then(({ AgentStudio }) => {
-      contentArea.appendChild(AgentStudio());
+      mountScreen(AgentStudio(), token);
     });
   }
 }
@@ -50,9 +71,7 @@ navigate('image');
 // Event Listener for Navigation
 window.addEventListener('navigate', (e) => {
   if (e.detail.page === 'settings') {
-    import('./components/SettingsModal.js').then(({ SettingsModal }) => {
-      document.body.appendChild(SettingsModal());
-    });
+    document.body.appendChild(SettingsModal());
   } else {
     navigate(e.detail.page);
   }

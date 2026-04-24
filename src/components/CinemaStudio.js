@@ -590,5 +590,10 @@ export function CinemaStudio() {
         }
     };
 
+    container.destroy = () => {
+        overlayBackdrop.remove();
+        document.querySelectorAll('.custom-dropdown').forEach(el => el.remove());
+    };
+
     return container;
 }

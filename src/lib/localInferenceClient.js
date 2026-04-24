@@ -19,6 +19,11 @@ class LocalInferenceClient {
         return window.localAI.listModels();
     }
 
+    async warmModel(modelId) {
+        if (!isLocalAIAvailable()) return { ok: false, skipped: true };
+        return window.localAI.warmModel(modelId);
+    }
+
     async downloadModel(modelId) {
         if (!isLocalAIAvailable()) throw new Error('Local AI only available in the desktop app.');
         return window.localAI.downloadModel(modelId);
@@ -65,6 +70,11 @@ class LocalInferenceClient {
     onDownloadProgress(callback) {
         if (!isLocalAIAvailable()) return () => {};
         return window.localAI.onDownloadProgress(callback);
+    }
+
+    onWarmProgress(callback) {
+        if (!isLocalAIAvailable()) return () => {};
+        return window.localAI.onWarmProgress(callback);
     }
 }
 

@@ -1124,5 +1124,10 @@ export function VideoStudio() {
         }
     };
 
+    container.destroy = () => {
+        window.removeEventListener('click', closeDropdown);
+        picker.destroy?.();
+    };
+
     return container;
 }

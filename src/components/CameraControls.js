@@ -79,6 +79,8 @@ export function CameraControls(onChange) {
         let isDown = false;
         let startY;
         let scrollTop;
+        let pendingDragY = null;
+        let dragFrame = 0;
 
         list.addEventListener('mousedown', (e) => {
             isDown = true;
@@ -104,9 +106,14 @@ export function CameraControls(onChange) {
         list.addEventListener('mousemove', (e) => {
             if (!isDown) return;
             e.preventDefault();
-            const y = e.pageY - list.offsetTop;
-            const walk = (y - startY) * 1.5; // Scroll speed multiplier
-            list.scrollTop = scrollTop - walk;
+            pendingDragY = e.pageY - list.offsetTop;
+            if (dragFrame) return;
+            dragFrame = requestAnimationFrame(() => {
+                dragFrame = 0;
+                if (pendingDragY === null) return;
+                const walk = (pendingDragY - startY) * 1.5; // Scroll speed multiplier
+                list.scrollTop = scrollTop - walk;
+            });
         });
 
         items.forEach(item => {
@@ -169,7 +176,11 @@ export function CameraControls(onChange) {
         colWrapper.appendChild(viewport);
 
         // Scroll-based selection logic (Guarantees one active item)
-        const handleScroll = () => {
+        let scrollFrame = 0;
+        let lastClosestValue = null;
+
+        const updateScrollSelection = () => {
+            scrollFrame = 0;
             const centerY = list.scrollTop + (list.clientHeight / 2);
             let closest = null;
             let minDist = Infinity;
@@ -185,6 +196,9 @@ export function CameraControls(onChange) {
                     closest = child;
                 }
             });
+
+            if (!closest || closest.dataset.value === lastClosestValue) return;
+            lastClosestValue = closest.dataset.value;
 
             // 2. Apply styles based on closest match
             children.forEach(child => {
@@ -226,6 +240,11 @@ export function CameraControls(onChange) {
             if (closest && closest.dataset.value !== state[key]) {
                 updateState(key, closest.dataset.value);
             }
+        };
+
+        const handleScroll = () => {
+            if (scrollFrame) return;
+            scrollFrame = requestAnimationFrame(updateScrollSelection);
         };
 
         list.addEventListener('scroll', handleScroll);

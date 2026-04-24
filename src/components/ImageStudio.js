@@ -10,6 +10,7 @@ import { ENHANCE_TAGS, QUICK_PROMPTS } from '../lib/promptUtils.js';
 import { AuthModal } from './AuthModal.js';
 import { createUploadPicker } from './UploadPicker.js';
 import { savePendingJob, removePendingJob, getPendingJobs } from '../lib/pendingJobs.js';
+import { showToast } from '../lib/toast.js';
 
 function createInlineInstructions(type) {
     const el = document.createElement('div');
@@ -39,6 +40,9 @@ export function ImageStudio() {
     let useLocalModel = false;
     let selectedLocalModel = LOCAL_MODEL_CATALOG[0]?.id || null;
     let localGenProgress = 0; // 0–1
+    let isGeneratingLocally = false;
+    let activeWarmModelId = null;
+    let warmHideTimer = null;
 
     // Advanced parameters state
     let negativePrompt = '';
@@ -147,13 +151,19 @@ export function ImageStudio() {
 
     const textarea = document.createElement('textarea');
     textarea.placeholder = 'Describe the image you want to create';
-    textarea.className = 'flex-1 bg-transparent border-none text-white text-base md:text-xl placeholder:text-muted focus:outline-none resize-none pt-2.5 leading-relaxed min-h-[40px] max-h-[150px] md:max-h-[250px] overflow-y-auto custom-scrollbar';
+    textarea.className = 'flex-1 bg-transparent border-none text-white text-base md:text-xl placeholder:text-muted focus:outline-none resize-none pt-2.5 leading-relaxed min-h-10 max-h-[150px] md:max-h-[250px] overflow-y-auto custom-scrollbar';
     textarea.rows = 1;
     textarea.oninput = () => {
         textarea.style.height = 'auto';
         const maxHeight = window.innerWidth < 768 ? 150 : 250;
         textarea.style.height = Math.min(textarea.scrollHeight, maxHeight) + 'px';
     };
+    textarea.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            generateBtn.click();
+        }
+    });
 
     topRow.appendChild(textarea);
     bar.appendChild(topRow);
@@ -216,6 +226,7 @@ export function ImageStudio() {
             if (useLocalModel) {
                 const lm = getLocalModelById(selectedLocalModel);
                 if (lm) document.getElementById('model-btn-label').textContent = lm.name;
+                startWarmSelectedLocalModel();
             } else {
                 document.getElementById('model-btn-label').textContent = selectedModelName;
             }
@@ -226,13 +237,13 @@ export function ImageStudio() {
     controlsLeft.appendChild(modelBtn);
     controlsLeft.appendChild(arBtn);
     controlsLeft.appendChild(qualityBtn);
-    
+
     // Advanced options toggle button
     const advancedBtn = createControlBtn(`
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="opacity-60 text-secondary"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 001.82-.33 1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-1.82.33A1.65 1.65 0 0019.4 9a1.65 1.65 0 00-1.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
     `, 'Advanced', 'advanced-btn', 'Show advanced options');
     controlsLeft.appendChild(advancedBtn);
-    
+
     // Quick Tools toggle button
     const toolsBtn = createControlBtn(`
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="opacity-60 text-secondary"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
@@ -267,7 +278,7 @@ export function ImageStudio() {
     localProgressWrap.id = 'local-progress-wrap';
     localProgressWrap.innerHTML = `
         <div class="flex items-center justify-between">
-            <span class="text-xs font-bold text-white/60">Generating locally...</span>
+            <span id="local-progress-label" class="text-xs font-bold text-white/60">Generating locally...</span>
             <span id="local-progress-pct" class="text-xs font-bold text-primary">0%</span>
         </div>
         <div class="h-1.5 rounded-full bg-white/10 overflow-hidden">
@@ -283,8 +294,80 @@ export function ImageStudio() {
         localAI.cancelGeneration();
         localProgressWrap.classList.remove('flex');
         localProgressWrap.classList.add('hidden');
+        const label = document.getElementById('local-progress-label');
+        if (label) label.textContent = 'Generating locally...';
         generateBtn.disabled = false;
         generateBtn.innerHTML = `Generate ✨`;
+    });
+
+    const formatBytes = (bytes) => {
+        if (!Number.isFinite(bytes) || bytes <= 0) return '0 MB';
+        const gb = bytes / (1024 ** 3);
+        if (gb >= 1) return `${gb.toFixed(1)} GB`;
+        return `${Math.round(bytes / (1024 ** 2))} MB`;
+    };
+
+    const setLocalProgress = ({ label, progress = 0, showCancel = false }) => {
+        const progressFill = document.getElementById('local-progress-fill');
+        const progressPct = document.getElementById('local-progress-pct');
+        const progressLabel = document.getElementById('local-progress-label');
+        const cancelBtn = document.getElementById('local-cancel-btn');
+        const pct = Math.round(Math.max(0, Math.min(1, progress)) * 100);
+
+        localProgressWrap.classList.remove('hidden');
+        localProgressWrap.classList.add('flex');
+        if (progressLabel) progressLabel.textContent = label;
+        if (progressFill) progressFill.style.width = `${pct}%`;
+        if (progressPct) progressPct.textContent = `${pct}%`;
+        if (cancelBtn) cancelBtn.style.display = showCancel ? '' : 'none';
+    };
+
+    const startWarmSelectedLocalModel = (modelId = selectedLocalModel) => {
+        if (!useLocalModel || !modelId || !isLocalAIAvailable()) return;
+        const lm = getLocalModelById(modelId);
+        if (!lm) return;
+
+        activeWarmModelId = modelId;
+        clearTimeout(warmHideTimer);
+        setLocalProgress({ label: `Preparing ${lm.name}...`, progress: 0, showCancel: false });
+        localAI.warmModel(modelId).catch((err) => {
+            if (activeWarmModelId !== modelId) return;
+            console.warn('[Local] model warmup failed:', err);
+            showToast(`Local model warmup failed: ${err.message.slice(0, 120)}`, { type: 'error', duration: 5000 });
+            localProgressWrap.classList.add('hidden');
+            localProgressWrap.classList.remove('flex');
+        });
+    };
+
+    const warmUnsub = localAI.onWarmProgress(({ modelId, status, progress, readBytes, totalBytes, fileName, skipped }) => {
+        if (modelId !== selectedLocalModel) return;
+        const lm = getLocalModelById(modelId);
+        if (!lm) return;
+
+        clearTimeout(warmHideTimer);
+        if (status === 'warming') {
+            const detail = totalBytes
+                ? `${formatBytes(readBytes)} / ${formatBytes(totalBytes)}`
+                : '';
+            const fileDetail = fileName ? ` (${fileName})` : '';
+            setLocalProgress({
+                label: `Reading ${lm.name} from disk${fileDetail} ${detail}`.trim(),
+                progress,
+                showCancel: isGeneratingLocally,
+            });
+        } else if (status === 'ready') {
+            setLocalProgress({
+                label: skipped ? `${lm.name} is already cached` : `${lm.name} is ready`,
+                progress: 1,
+                showCancel: isGeneratingLocally,
+            });
+            if (!isGeneratingLocally) {
+                warmHideTimer = setTimeout(() => {
+                    localProgressWrap.classList.add('hidden');
+                    localProgressWrap.classList.remove('flex');
+                }, 1800);
+            }
+        }
     });
 
     // ==========================================
@@ -293,7 +376,7 @@ export function ImageStudio() {
     const toolsPanel = document.createElement('div');
     toolsPanel.className = 'w-full max-w-4xl mt-6 animate-fade-in-up hidden';
     toolsPanel.id = 'tools-panel';
-    
+
     // Build tools panel HTML
     toolsPanel.innerHTML = `
         <div class="bg-[#111]/90 backdrop-blur-xl border border-white/10 rounded-2xl p-5 flex flex-col gap-4">
@@ -328,15 +411,15 @@ export function ImageStudio() {
                         <div>
                             <label class="text-[10px] font-bold text-muted uppercase tracking-wider mb-2 block">Enhancement Tags</label>
                             <div id="enhance-tags-area" class="flex flex-wrap gap-1.5">
-                                ${Object.entries(ENHANCE_TAGS).map(([category, tags]) => 
-                                    tags.map(tag => `<button class="enhance-tag-btn px-2 py-1 rounded-full text-[10px] font-bold bg-white/5 text-secondary hover:bg-white/10 transition-all" data-tag="${tag}">${tag}</button>`).join('')
-                                ).join('')}
+                                ${Object.entries(ENHANCE_TAGS).map(([category, tags]) =>
+        tags.map(tag => `<button class="enhance-tag-btn px-2 py-1 rounded-full text-[10px] font-bold bg-white/5 text-secondary hover:bg-white/10 transition-all" data-tag="${tag}">${tag}</button>`).join('')
+    ).join('')}
                             </div>
                         </div>
                         
                         <div class="flex flex-col gap-2">
                             <label class="text-[10px] font-bold text-muted uppercase tracking-wider">Enhanced Prompt</label>
-                            <div id="enhanced-prompt-display" class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-xs min-h-[40px]"></div>
+                            <div id="enhanced-prompt-display" class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-xs min-h-10"></div>
                             <div class="flex gap-2">
                                 <button id="copy-enhanced-btn" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-white/5 text-secondary hover:bg-white/10 transition-all">
                                     Copy
@@ -351,14 +434,14 @@ export function ImageStudio() {
             </div>
         </div>
     `;
-    
+
     container.appendChild(toolsPanel);
 
     // ==========================================
     // 4. ADVANCED OPTIONS PANEL
     // ==========================================
     const STYLE_PRESETS = ['None', 'Photorealistic', 'Anime', 'Cinematic', 'Oil Painting', 'Watercolor', 'Digital Art', 'Concept Art', 'Cyberpunk'];
-    
+
     const advancedPanel = document.createElement('div');
     advancedPanel.className = 'w-full max-w-4xl mt-6 animate-fade-in-up hidden';
     advancedPanel.id = 'advanced-panel';
@@ -389,7 +472,7 @@ export function ImageStudio() {
             
             <!-- Guidance Scale & Steps Row -->
             <div class="flex gap-4 flex-wrap">
-                <div class="flex-1 min-w-[200px] flex flex-col gap-2">
+                <div class="flex-1 min-w-50 flex flex-col gap-2">
                     <div class="flex items-center justify-between">
                         <label class="text-xs font-bold text-secondary uppercase tracking-wider">Guidance Scale</label>
                         <span id="guidance-value" class="text-xs font-bold text-primary">7.5</span>
@@ -398,7 +481,7 @@ export function ImageStudio() {
                         class="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary">
                 </div>
                 
-                <div class="flex-1 min-w-[200px] flex flex-col gap-2">
+                <div class="flex-1 min-w-50 flex flex-col gap-2">
                     <div class="flex items-center justify-between">
                         <label class="text-xs font-bold text-secondary uppercase tracking-wider">Steps</label>
                         <span id="steps-value" class="text-xs font-bold text-primary">25</span>
@@ -432,14 +515,14 @@ export function ImageStudio() {
             
             <!-- Width & Height -->
             <div class="flex gap-4 flex-wrap">
-                <div class="flex-1 min-w-[120px] flex flex-col gap-2">
+                <div class="flex-1 min-w-30 flex flex-col gap-2">
                     <label class="text-xs font-bold text-secondary uppercase tracking-wider">Width</label>
                     <input type="number" id="width-input" 
                         placeholder="Auto"
                         value=""
                         class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm placeholder:text-muted focus:outline-none focus:border-primary/50 transition-colors">
                 </div>
-                <div class="flex-1 min-w-[120px] flex flex-col gap-2">
+                <div class="flex-1 min-w-30 flex flex-col gap-2">
                     <label class="text-xs font-bold text-secondary uppercase tracking-wider">Height</label>
                     <input type="number" id="height-input" 
                         placeholder="Auto"
@@ -483,34 +566,31 @@ export function ImageStudio() {
         advancedPanel.classList.toggle('hidden', !showAdvanced);
         document.getElementById('advanced-btn-label').textContent = showAdvanced ? 'Less' : 'Advanced';
     };
-    
+
     // Add tools panel and advanced panel to container first before accessing their elements
     container.appendChild(toolsPanel);
     container.appendChild(advancedPanel);
-    
+
     // Now set up event handlers after elements are in DOM
     advancedBtn.onclick = toggleAdvanced;
     const closeAdvBtn = advancedPanel.querySelector('#close-adv-btn');
     if (closeAdvBtn) closeAdvBtn.onclick = toggleAdvanced;
-    
+
     // Quick Tools Panel toggle
     const toggleTools = () => {
         showToolsPanel = !showToolsPanel;
         toolsPanel.classList.toggle('hidden', !showToolsPanel);
-        if (showToolsPanel) {
+        if (showToolsPanel && showAdvanced) {
             // Close advanced panel when opening tools
-            if (!showAdvanced) {
-                showAdvanced = true;
-                advancedPanel.classList.remove('hidden');
-            }
+            showAdvanced = false;
+            advancedPanel.classList.add('hidden');
         }
-        document.getElementById('tools-btn-label').textContent = showToolsPanel ? 'Tools' : 'Tools';
     };
-    
+
     toolsBtn.onclick = toggleTools;
     const closeToolsBtn = toolsPanel.querySelector('#close-tools-btn');
     if (closeToolsBtn) closeToolsBtn.onclick = toggleTools;
-    
+
     // Quick Starter buttons
     const quickStarterBtns = toolsPanel.querySelectorAll('.quick-starter-btn');
     quickStarterBtns.forEach(btn => {
@@ -525,12 +605,12 @@ export function ImageStudio() {
             toolsPanel.classList.add('hidden');
         };
     });
-    
+
     // Prompt Enhancer - selected tags state
     const enhanceSelectedTags = new Set();
     const basePromptInput = toolsPanel.querySelector('#base-prompt-input');
     const enhancedPromptDisplay = toolsPanel.querySelector('#enhanced-prompt-display');
-    
+
     // Update enhanced prompt display
     const updateEnhancedPrompt = () => {
         const base = basePromptInput?.value?.trim() || '';
@@ -541,12 +621,12 @@ export function ImageStudio() {
             enhancedPromptDisplay.classList.toggle('text-muted', !enhanced);
         }
     };
-    
+
     // Base prompt input handler
     if (basePromptInput) {
         basePromptInput.oninput = updateEnhancedPrompt;
     }
-    
+
     // Enhance tag buttons
     const enhanceTagBtns = toolsPanel.querySelectorAll('.enhance-tag-btn');
     enhanceTagBtns.forEach(btn => {
@@ -564,7 +644,7 @@ export function ImageStudio() {
             updateEnhancedPrompt();
         };
     });
-    
+
     // Copy enhanced button
     const copyEnhancedBtn = toolsPanel.querySelector('#copy-enhanced-btn');
     if (copyEnhancedBtn) {
@@ -577,7 +657,7 @@ export function ImageStudio() {
             }
         };
     }
-    
+
     // Use enhanced button
     const useEnhancedBtn = toolsPanel.querySelector('#use-enhanced-btn');
     if (useEnhancedBtn) {
@@ -594,11 +674,11 @@ export function ImageStudio() {
             }
         };
     }
-    
+
     // Negative prompt
     const negPromptInput = advancedPanel.querySelector('#negative-prompt-input');
     if (negPromptInput) negPromptInput.oninput = (e) => { negativePrompt = e.target.value; };
-    
+
     // Guidance scale slider
     const guidanceSlider = advancedPanel.querySelector('#guidance-slider');
     const guidanceValue = advancedPanel.querySelector('#guidance-value');
@@ -608,7 +688,7 @@ export function ImageStudio() {
             guidanceValue.textContent = guidanceScale;
         };
     }
-    
+
     // Steps slider
     const stepsSlider = advancedPanel.querySelector('#steps-slider');
     const stepsValue = advancedPanel.querySelector('#steps-value');
@@ -618,11 +698,11 @@ export function ImageStudio() {
             stepsValue.textContent = steps;
         };
     }
-    
+
     // Seed input
     const seedInput = advancedPanel.querySelector('#seed-input');
     if (seedInput) seedInput.oninput = (e) => { seed = parseInt(e.target.value) || -1; };
-    
+
     // Randomize seed button
     const randSeedBtn = advancedPanel.querySelector('#randomize-seed-btn');
     if (randSeedBtn) {
@@ -631,7 +711,7 @@ export function ImageStudio() {
             if (seedInput) seedInput.value = seed;
         };
     }
-    
+
     // Batch count slider
     const batchSlider = advancedPanel.querySelector('#batch-slider');
     const batchValueEl = advancedPanel.querySelector('#batch-value');
@@ -641,7 +721,7 @@ export function ImageStudio() {
             batchValueEl.textContent = batchCount;
         };
     }
-    
+
     // Width input
     const widthInput = advancedPanel.querySelector('#width-input');
     if (widthInput) {
@@ -649,7 +729,7 @@ export function ImageStudio() {
             customWidth = parseInt(e.target.value) || 0;
         };
     }
-    
+
     // Height input
     const heightInput = advancedPanel.querySelector('#height-input');
     if (heightInput) {
@@ -657,7 +737,7 @@ export function ImageStudio() {
             customHeight = parseInt(e.target.value) || 0;
         };
     }
-    
+
     // Reference strength slider
     const refStrengthSlider = advancedPanel.querySelector('#reference-strength-slider');
     const refStrengthValue = advancedPanel.querySelector('#reference-strength-value');
@@ -667,7 +747,7 @@ export function ImageStudio() {
             refStrengthValue.textContent = referenceStrength + '%';
         };
     }
-    
+
     // LoRA input
     const loraInput = advancedPanel.querySelector('#lora-input');
     if (loraInput) {
@@ -675,7 +755,7 @@ export function ImageStudio() {
             selectedLora = e.target.value.trim();
         };
     }
-    
+
     // LoRA weight input
     const loraWeightInput = advancedPanel.querySelector('#lora-weight-input');
     if (loraWeightInput) {
@@ -683,7 +763,7 @@ export function ImageStudio() {
             loraWeight = parseFloat(e.target.value) || 1.0;
         };
     }
-    
+
     // Style preset handlers
     advancedPanel.querySelectorAll('.style-preset-btn').forEach(btn => {
         btn.onclick = () => {
@@ -704,12 +784,13 @@ export function ImageStudio() {
 
     const showDropdown = (type, anchorBtn) => {
         dropdown.innerHTML = '';
+        // Reset all size classes to prevent stale accumulation
+        dropdown.classList.remove('w-[calc(100vw-3rem)]', 'max-w-xs', 'max-w-[240px]', 'max-w-[200px]');
         dropdown.classList.remove('opacity-0', 'pointer-events-none');
         dropdown.classList.add('opacity-100', 'pointer-events-auto');
 
         if (type === 'model') {
             dropdown.classList.add('w-[calc(100vw-3rem)]', 'max-w-xs');
-            dropdown.classList.remove('max-w-[240px]', 'max-w-[200px]');
             dropdown.innerHTML = `
                 <div class="flex flex-col h-full max-h-[70vh]">
                     <div class="px-2 pb-3 mb-2 border-b border-white/5 shrink-0">
@@ -760,6 +841,7 @@ export function ImageStudio() {
                             selectedAr = m.aspectRatios[0];
                             document.getElementById('ar-btn-label').textContent = selectedAr;
                             qualityBtn.style.display = 'none';
+                            startWarmSelectedLocalModel(m.id);
                             closeDropdown();
                         };
                         list.appendChild(item);
@@ -919,7 +1001,8 @@ export function ImageStudio() {
         }
     };
 
-    window.onclick = () => closeDropdown();
+    const handleWindowClick = () => closeDropdown();
+    window.addEventListener('click', handleWindowClick);
     container.appendChild(dropdown);
 
     // ==========================================
@@ -929,7 +1012,7 @@ export function ImageStudio() {
 
     // History sidebar
     const historySidebar = document.createElement('div');
-    historySidebar.className = 'fixed right-0 top-0 h-full w-20 md:w-24 bg-black/60 backdrop-blur-xl border-l border-white/5 z-50 flex flex-col items-center py-4 gap-3 overflow-y-auto transition-all duration-500 translate-x-full opacity-0';
+    historySidebar.className = 'fixed right-0 top-16 h-[calc(100%-4rem)] w-20 md:w-24 bg-black/60 backdrop-blur-xl border-l border-white/5 z-40 flex flex-col items-center py-4 gap-3 overflow-y-auto transition-all duration-500 translate-x-full opacity-0';
     historySidebar.id = 'history-sidebar';
 
     const historyLabel = document.createElement('div');
@@ -945,7 +1028,7 @@ export function ImageStudio() {
 
     // Main canvas
     const canvas = document.createElement('div');
-    canvas.className = 'absolute inset-0 flex flex-col items-center justify-center p-4 min-[800px]:p-16 z-10 opacity-0 pointer-events-none transition-all duration-1000 translate-y-10 scale-95';
+    canvas.className = 'w-full flex-1 flex flex-col items-center justify-center p-4 min-[800px]:p-8 z-10 opacity-0 pointer-events-none transition-all duration-1000 translate-y-10 scale-95';
 
     const imageContainer = document.createElement('div');
     imageContainer.className = 'relative group';
@@ -980,9 +1063,10 @@ export function ImageStudio() {
 
     // --- Helper: Show image in canvas ---
     const showImageInCanvas = (imageUrl) => {
-        // Fully hide hero and prompt
+        // Hide hero but keep prompt bar visible for quick edits
         hero.classList.add('hidden');
-        promptWrapper.classList.add('hidden');
+        promptWrapper.classList.remove('hidden');
+        promptWrapper.classList.add('max-w-2xl');
 
         resultImg.src = imageUrl;
         resultImg.onload = () => {
@@ -1126,7 +1210,7 @@ export function ImageStudio() {
         canvasControls.classList.remove('opacity-100');
         // Restore hero and prompt
         hero.classList.remove('hidden', 'opacity-0', 'scale-95', '-translate-y-10', 'pointer-events-none');
-        promptWrapper.classList.remove('hidden', 'opacity-40');
+        promptWrapper.classList.remove('hidden', 'opacity-40', 'max-w-2xl');
         textarea.value = '';
         picker.reset();
         uploadedImageUrls = [];
@@ -1152,12 +1236,12 @@ export function ImageStudio() {
         const prompt = textarea.value.trim();
         if (imageMode) {
             if (uploadedImageUrls.length === 0) {
-                alert('Please upload a reference image first.');
+                showToast('Please upload a reference image first.', { type: 'warning' });
                 return;
             }
         } else {
             if (!prompt) {
-                alert('Please enter a prompt to generate an image.');
+                showToast('Please enter a prompt to generate an image.', { type: 'warning' });
                 return;
             }
         }
@@ -1165,51 +1249,93 @@ export function ImageStudio() {
         // ── Local inference path ──────────────────────────────────────────────
         if (useLocalModel) {
             const lm = getLocalModelById(selectedLocalModel);
-            if (!lm) { alert('No local model selected.'); return; }
+            if (!lm) { showToast('No local model selected.', { type: 'warning' }); return; }
 
             hero.classList.add('opacity-0', 'scale-95', '-translate-y-10', 'pointer-events-none');
             generateBtn.disabled = true;
             generateBtn.innerHTML = `<span class="animate-spin inline-block mr-2 text-black">◌</span> Generating...`;
+            isGeneratingLocally = true;
 
             const progressWrap = document.getElementById('local-progress-wrap');
             const progressFill = document.getElementById('local-progress-fill');
             const progressPct = document.getElementById('local-progress-pct');
+            const cancelBtn = document.getElementById('local-cancel-btn');
             progressWrap.classList.remove('hidden');
             progressWrap.classList.add('flex');
+            if (cancelBtn) cancelBtn.style.display = '';
 
+            const progressLabel = document.getElementById('local-progress-label');
             const unsub = localAI.onProgress(({ step, totalSteps, progress, status }) => {
-                const pct = Math.round((progress || (step / totalSteps)) * 100);
+                // Show descriptive text during model loading phase
+                if (status === 'warming-model') {
+                    if (progressLabel) progressLabel.textContent = 'Preparing model cache...';
+                    generateBtn.innerHTML = `<span class="animate-spin inline-block mr-2 text-black">◌</span> Preparing...`;
+                    return;
+                }
+                if (status === 'starting' || status === 'loading-model') {
+                    if (progressLabel) progressLabel.textContent = 'Loading model into GPU memory...';
+                    if (progressFill) progressFill.style.width = '0%';
+                    if (progressPct) progressPct.textContent = '0%';
+                    generateBtn.innerHTML = `<span class="animate-spin inline-block mr-2 text-black">◌</span> Loading model...`;
+                    return;
+                }
+                if (status === 'generating') {
+                    if (progressLabel) progressLabel.textContent = 'Generating...';
+                }
+                let ratio = 0;
+                if (Number.isFinite(progress)) {
+                    ratio = progress;
+                } else if (Number.isFinite(step) && Number.isFinite(totalSteps) && totalSteps > 0) {
+                    ratio = step / totalSteps;
+                }
+                const pct = Math.round(Math.max(0, Math.min(1, ratio)) * 100);
                 if (progressFill) progressFill.style.width = `${pct}%`;
                 if (progressPct) progressPct.textContent = `${pct}%`;
                 generateBtn.innerHTML = `<span class="animate-spin inline-block mr-2 text-black">◌</span> ${pct}%`;
             });
 
+            const LOCAL_GENERATION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
             let hadError = false;
+            let timeoutId;
             try {
-                const res = await localAI.generate({
-                    model: selectedLocalModel,
-                    prompt,
-                    negative_prompt: negativePrompt || undefined,
-                    aspect_ratio: selectedAr,
-                    steps: steps,
-                    guidance_scale: guidanceScale,
-                    seed,
+                const timeoutPromise = new Promise((_, timeoutReject) => {
+                    timeoutId = setTimeout(() => {
+                        localAI.cancelGeneration();
+                        timeoutReject(new Error('Local generation timed out after 5 minutes. The model may be too large for this machine or the process may have hung.'));
+                    }, LOCAL_GENERATION_TIMEOUT_MS);
                 });
+                const res = await Promise.race([
+                    localAI.generate({
+                        model: selectedLocalModel,
+                        prompt,
+                        negative_prompt: negativePrompt || undefined,
+                        aspect_ratio: selectedAr,
+                        steps: steps,
+                        guidance_scale: guidanceScale,
+                        seed,
+                        batch_count: batchCount,
+                    }),
+                    timeoutPromise,
+                ]);
                 unsub();
                 progressWrap.classList.replace('flex', 'hidden');
                 progressWrap.classList.add('hidden');
+                if (progressLabel) progressLabel.textContent = 'Generating locally...';
 
-                if (res?.url) {
-                    addToHistory({
-                        id: Date.now().toString(),
-                        url: res.url,
-                        prompt,
-                        model: `local:${selectedLocalModel}`,
-                        aspect_ratio: selectedAr,
-                        seed: res.seed,
-                        timestamp: new Date().toISOString()
+                const outputUrls = res?.urls?.length ? res.urls : (res?.url ? [res.url] : []);
+                if (outputUrls.length > 0) {
+                    outputUrls.forEach((url, idx) => {
+                        addToHistory({
+                            id: `${Date.now()}-${idx}`,
+                            url,
+                            prompt,
+                            model: `local:${selectedLocalModel}`,
+                            aspect_ratio: selectedAr,
+                            seed: Number.isFinite(res.seed) ? res.seed + idx : res.seed,
+                            timestamp: new Date().toISOString()
+                        });
                     });
-                    showImageInCanvas(res.url);
+                    showImageInCanvas(outputUrls[0]);
                 } else {
                     throw new Error('No image returned from local generation');
                 }
@@ -1217,14 +1343,15 @@ export function ImageStudio() {
                 hadError = true;
                 unsub();
                 progressWrap.classList.add('hidden');
+                if (progressLabel) progressLabel.textContent = 'Generating locally...';
                 console.error('[Local] generation error:', e);
                 hero.classList.remove('opacity-0', 'scale-95', '-translate-y-10', 'pointer-events-none');
-                console.error('[Local] full error:', e.message);
-                generateBtn.innerHTML = `Error: ${e.message.slice(0, 120)}`;
-                setTimeout(() => { generateBtn.innerHTML = `Generate ✨`; }, 6000);
+                showToast(e.message.slice(0, 200), { type: 'error', duration: 6000 });
             } finally {
+                clearTimeout(timeoutId);
+                isGeneratingLocally = false;
                 generateBtn.disabled = false;
-                if (!hadError) generateBtn.innerHTML = `Generate ✨`;
+                generateBtn.innerHTML = `Generate ✨`;
             }
             return;
         }
@@ -1300,15 +1427,18 @@ export function ImageStudio() {
             console.error(e);
             // Restore hero so the page doesn't look broken after a failed generation
             hero.classList.remove('opacity-0', 'scale-95', '-translate-y-10', 'pointer-events-none');
-            generateBtn.innerHTML = `Error: ${e.message.slice(0, 60)}`;
-            setTimeout(() => {
-                generateBtn.innerHTML = `Generate ✨`;
-            }, 4000);
+            showToast(e.message.slice(0, 200), { type: 'error', duration: 5000 });
         } finally {
             generateBtn.disabled = false;
-            // Only reset the label on success; the catch timeout handles the error case
-            if (!hadError) generateBtn.innerHTML = `Generate ✨`;
+            generateBtn.innerHTML = `Generate ✨`;
         }
+    };
+
+    container.destroy = () => {
+        window.removeEventListener('click', handleWindowClick);
+        clearTimeout(warmHideTimer);
+        warmUnsub?.();
+        picker.destroy?.();
     };
 
     return container;

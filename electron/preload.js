@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('localAI', {
 
     // Model management
     listModels: () => ipcRenderer.invoke('local-ai:list-models'),
+    warmModel: (modelId) => ipcRenderer.invoke('local-ai:warm-model', modelId),
     downloadModel: (modelId) => ipcRenderer.invoke('local-ai:download-model', modelId),
     downloadAuxiliary: (auxKey) => ipcRenderer.invoke('local-ai:download-auxiliary', auxKey),
     deleteModel: (modelId) => ipcRenderer.invoke('local-ai:delete-model', modelId),
@@ -28,5 +29,10 @@ contextBridge.exposeInMainWorld('localAI', {
         const listener = (_, data) => callback(data);
         ipcRenderer.on('local-ai:download-progress', listener);
         return () => ipcRenderer.removeListener('local-ai:download-progress', listener);
+    },
+    onWarmProgress: (callback) => {
+        const listener = (_, data) => callback(data);
+        ipcRenderer.on('local-ai:warm-progress', listener);
+        return () => ipcRenderer.removeListener('local-ai:warm-progress', listener);
     }
 });

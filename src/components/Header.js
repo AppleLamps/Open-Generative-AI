@@ -34,18 +34,21 @@ export function Header(navigate) {
         link.textContent = item;
         link.className = `hover:text-white transition-all cursor-pointer relative group ${item === 'Image' ? 'text-white' : ''}`;
 
-        // Active Indicator or Dot
-        if (item === 'Image') {
-            const dot = document.createElement('div');
-            dot.className = 'absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-primary rounded-full';
-            link.appendChild(dot);
-        }
+        // Active indicator dot
+        const dot = document.createElement('div');
+        dot.className = `absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-primary rounded-full transition-opacity ${item === 'Image' ? 'opacity-100' : 'opacity-0'}`;
+        link.appendChild(dot);
 
         link.onclick = () => {
             // Remove active state from all
-            Array.from(menu.children).forEach(child => child.classList.remove('text-white'));
+            Array.from(menu.children).forEach(child => {
+                child.classList.remove('text-white');
+                const childDot = child.querySelector('div');
+                if (childDot) childDot.classList.replace('opacity-100', 'opacity-0');
+            });
             // Add to current
             link.classList.add('text-white');
+            dot.classList.replace('opacity-0', 'opacity-100');
 
             if (item === 'Image') navigate('image');
             else if (item === 'Video') navigate('video');

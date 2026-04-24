@@ -402,5 +402,10 @@ export function createUploadPicker({ anchorContainer, onSelect, onClear, maxImag
         fireOnSelect();
     };
 
-    return { trigger, panel, reset, setMaxImages, getSelectedUrls, setImage };
+    const destroy = () => {
+        window.removeEventListener('click', closePanel);
+        panel.remove();
+    };
+
+    return { trigger, panel, reset, setMaxImages, getSelectedUrls, setImage, destroy };
 }

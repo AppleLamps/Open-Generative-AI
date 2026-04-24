@@ -727,5 +727,10 @@ export function LipSyncStudio() {
         }
     };
 
+    container.destroy = () => {
+        window.removeEventListener('click', closeDropdown);
+        imagePicker.destroy?.();
+    };
+
     return container;
 }

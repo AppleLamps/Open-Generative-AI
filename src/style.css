@@ -27,3 +27,32 @@ main {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Desktop performance trims: Electron/Chromium struggles with stacked
+   translucent blur surfaces during scroll and route transitions. */
+.backdrop-blur-sm,
+.backdrop-blur-md,
+.backdrop-blur-lg,
+.backdrop-blur-xl,
+.backdrop-blur-2xl,
+.backdrop-blur-3xl {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+.blur-\[100px\],
+.blur-\[120px\] {
+  filter: blur(32px) !important;
+}
+
+.transition-all {
+  transition-property: color, background-color, border-color, opacity, transform, box-shadow !important;
+}
+
+.animate-fade-in-up,
+.translate-y-10,
+.translate-y-20,
+.scale-95,
+.scale-100 {
+  will-change: transform, opacity;
+}
