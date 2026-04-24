@@ -3,6 +3,7 @@ import { t2vModels, getAspectRatiosForVideoModel, getDurationsForModel, getResol
 import { AuthModal } from './AuthModal.js';
 import { createUploadPicker } from './UploadPicker.js';
 import { savePendingJob, removePendingJob, getPendingJobs } from '../lib/pendingJobs.js';
+import { showToast } from '../lib/toast.js';
 
 export function VideoStudio() {
     const container = document.createElement('div');
@@ -221,7 +222,7 @@ export function VideoStudio() {
         } catch (err) {
             console.error('[VideoStudio] Video upload failed:', err);
             showVideoIcon();
-            alert(`Video upload failed: ${err.message}`);
+            showToast(`Video upload failed: ${err.message.slice(0, 160)}`, { type: 'error', duration: 5000 });
         }
         videoFileInput.value = '';
     };
@@ -960,22 +961,22 @@ export function VideoStudio() {
 
         if (v2vMode) {
             if (!uploadedVideoUrl) {
-                alert('Please upload a video first.');
+                showToast('Please upload a video first.', { type: 'warning' });
                 return;
             }
         } else if (isExtendMode) {
             if (!lastGenerationId) {
-                alert('No Seedance 2.0 generation found to extend. Generate a video first.');
+                showToast('Generate a Seedance 2.0 video before extending it.', { type: 'warning' });
                 return;
             }
         } else if (imageMode) {
             if (!uploadedImageUrl) {
-                alert('Please upload a start frame image first.');
+                showToast('Please upload a start frame image first.', { type: 'warning' });
                 return;
             }
         } else {
             if (!prompt) {
-                alert('Please enter a prompt to generate a video.');
+                showToast('Please enter a prompt to generate a video.', { type: 'warning' });
                 return;
             }
         }

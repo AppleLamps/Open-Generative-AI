@@ -2,6 +2,21 @@ const { app, BrowserWindow, shell } = require('electron');
 const path = require('path');
 const { register: registerLocalInference } = require('./lib/localInference');
 
+const ALLOWED_EXTERNAL_PROTOCOLS = new Set(['https:', 'mailto:']);
+
+function openExternalUrl(url) {
+    try {
+        const parsed = new URL(url);
+        if (!ALLOWED_EXTERNAL_PROTOCOLS.has(parsed.protocol)) {
+            console.warn('[security] Blocked external URL:', url);
+            return;
+        }
+        shell.openExternal(url);
+    } catch {
+        console.warn('[security] Blocked malformed external URL:', url);
+    }
+}
+
 // Ubuntu 24.04+ sets kernel.apparmor_restrict_unprivileged_userns=1 which
 // blocks Chromium's user namespace sandbox. The .deb package ships an AppArmor
 // profile that grants the permission cleanly. When running the AppImage on an
@@ -22,7 +37,8 @@ function createWindow() {
         minWidth: 1024,
         minHeight: 640,
         webPreferences: {
-            webSecurity: false,
+            webSecurity: true,
+            allowRunningInsecureContent: false,
             contextIsolation: true,
             nodeIntegration: false,
             preload: path.join(__dirname, 'preload.js'),
@@ -44,8 +60,14 @@ function createWindow() {
     });
 
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-        shell.openExternal(url);
+        openExternalUrl(url);
         return { action: 'deny' };
+    });
+
+    mainWindow.webContents.on('will-navigate', (event, url) => {
+        if (url === mainWindow.webContents.getURL()) return;
+        event.preventDefault();
+        openExternalUrl(url);
     });
 
     mainWindow.once('ready-to-show', () => {

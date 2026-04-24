@@ -84,7 +84,7 @@ function getBinaryPath() { return path.join(getBinDir(), BINARY_NAME); }
 
 // ─── State ────────────────────────────────────────────────────────────────────
 let activeProcess = null;
-const activeDownloads = new Map(); // modelId → request object
+const activeDownloads = new Map(); // download id -> cancel handle
 const warmCache = new Map(); // modelId -> { signature, completedAt, totalBytes }
 const activeWarmups = new Map(); // modelId -> Promise
 
@@ -124,8 +124,9 @@ function getBinaryAssetMatcher() {
 }
 
 // ─── Robust HTTPS download with redirect-following, range-resume, and retry ───
-function downloadFile(url, destPath, onProgress) {
+function downloadFile(url, destPath, onProgress, downloadId) {
     const tmp = destPath + '.part';
+    let cancelled = false;
 
     // Outer total so progress never goes backwards across retries/redirects
     let knownTotal = 0;
@@ -181,12 +182,33 @@ function downloadFile(url, destPath, onProgress) {
                 if (knownTotal && onProgress) onProgress(received / knownTotal);
             });
             res.pipe(out);
-            out.on('finish', () => { fs.renameSync(tmp, destPath); resolve(); });
+            out.on('finish', () => {
+                if (cancelled) {
+                    reject(new Error('Download cancelled.'));
+                    return;
+                }
+                fs.renameSync(tmp, destPath);
+                resolve();
+            });
             out.on('error', reject);
             res.on('error', reject);
         });
 
+        if (downloadId) {
+            activeDownloads.set(downloadId, {
+                tmp,
+                cancel: () => {
+                    cancelled = true;
+                    req.destroy(new Error('Download cancelled.'));
+                },
+            });
+        }
+
         req.on('error', (err) => {
+            if (cancelled || err.message === 'Download cancelled.') {
+                reject(new Error('Download cancelled.'));
+                return;
+            }
             if (retriesLeft > 0) {
                 console.warn(`[download] ${err.message} — retrying in 3s (${retriesLeft} left)`);
                 setTimeout(() => resolve(attempt(requestUrl, redirectsLeft, retriesLeft - 1)), 3000);
@@ -198,7 +220,23 @@ function downloadFile(url, destPath, onProgress) {
         req.setTimeout(60000, () => req.destroy(new Error('Request timed out')));
     });
 
-    return attempt(url, 10, 5);
+    return attempt(url, 10, 5).finally(() => {
+        if (downloadId) activeDownloads.delete(downloadId);
+    });
+}
+
+function cancelDownload(downloadId) {
+    const active = activeDownloads.get(downloadId);
+    if (!active) return { ok: true, cancelled: false };
+
+    active.cancel();
+    activeDownloads.delete(downloadId);
+    try {
+        if (active.tmp && fs.existsSync(active.tmp)) fs.unlinkSync(active.tmp);
+    } catch {
+        // The write stream may still be closing; leaving a .part file is harmless.
+    }
+    return { ok: true, cancelled: true };
 }
 
 // ─── Extract zip on each platform ────────────────────────────────────────────
@@ -369,7 +407,7 @@ async function downloadBinary(mainWindow) {
         const zipPath = path.join(getBinDir(), zipName);
         await downloadFile(downloadUrl, zipPath, (p) => {
             send({ phase: 'downloading', progress: p });
-        });
+        }, '__binary__');
 
         send({ phase: 'extracting', progress: 0.95 });
         await extractZip(zipPath, getBinDir());
@@ -420,7 +458,7 @@ async function downloadBinary(mainWindow) {
                     const cudartZipPath = path.join(getBinDir(), cudartAsset.name);
                     await downloadFile(cudartAsset.browser_download_url, cudartZipPath, (p) => {
                         send({ phase: 'downloading-cudart', progress: p });
-                    });
+                    }, '__binary__');
                     send({ phase: 'extracting-cudart', progress: 0.98 });
                     await extractZip(cudartZipPath, getBinDir());
                     fs.unlinkSync(cudartZipPath);
@@ -501,7 +539,7 @@ async function downloadModel(modelId, mainWindow) {
 
     await downloadFile(model.downloadUrl, destPath, (p) => {
         send({ phase: 'downloading', progress: p });
-    });
+    }, modelId);
 
     send({ phase: 'done', progress: 1 });
     return { ok: true, path: destPath };
@@ -521,7 +559,7 @@ async function downloadAuxiliary(auxKey, mainWindow) {
 
     await downloadFile(aux.downloadUrl, destPath, (p) => {
         send({ phase: 'downloading', progress: p });
-    });
+    }, id);
 
     send({ phase: 'done', progress: 1 });
     return { ok: true, path: destPath };
@@ -875,6 +913,7 @@ function register() {
     ipcMain.handle('local-ai:warm-model', (_, modelId) => warmModel(modelId, getMainWindow()));
     ipcMain.handle('local-ai:download-model', (_, modelId) => downloadModel(modelId, getMainWindow()));
     ipcMain.handle('local-ai:download-auxiliary', (_, auxKey) => downloadAuxiliary(auxKey, getMainWindow()));
+    ipcMain.handle('local-ai:cancel-download', (_, downloadId) => cancelDownload(downloadId));
     ipcMain.handle('local-ai:delete-model', (_, modelId) => deleteModel(modelId));
     ipcMain.handle('local-ai:generate', (_, params) => generate(params, getMainWindow()));
     ipcMain.handle('local-ai:cancel-generation', () => cancelGeneration());

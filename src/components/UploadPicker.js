@@ -1,6 +1,7 @@
 import { muapi } from '../lib/muapi.js';
 import { AuthModal } from './AuthModal.js';
 import { getUploadHistory, saveUpload, removeUpload, generateThumbnail } from '../lib/uploadHistory.js';
+import { showToast } from '../lib/toast.js';
 
 /**
  * Creates a self-contained upload picker: a trigger button + history panel.
@@ -367,7 +368,7 @@ export function createUploadPicker({ anchorContainer, onSelect, onClear, maxImag
         } catch (err) {
             console.error('[UploadPicker] Upload failed:', err);
             updateTrigger();
-            alert(`Image upload failed: ${err.message}`);
+            showToast(`Image upload failed: ${err.message.slice(0, 160)}`, { type: 'error', duration: 5000 });
         }
 
         fileInput.value = '';

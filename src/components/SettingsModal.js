@@ -1,7 +1,8 @@
 import { LocalModelManager } from './LocalModelManager.js';
 import { isLocalAIAvailable } from '../lib/localInferenceClient.js';
+import { showToast } from '../lib/toast.js';
 
-export function SettingsModal(onClose) {
+export function SettingsModal(onClose, initialTab = 'api') {
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:100;';
 
@@ -25,7 +26,7 @@ export function SettingsModal(onClose) {
         ...(isLocalAIAvailable() ? [{ id: 'local', label: 'Local Models' }] : []),
     ];
 
-    let activeTab = 'api';
+    let activeTab = TABS.some((tab) => tab.id === initialTab) ? initialTab : 'api';
 
     const tabBar = document.createElement('div');
     tabBar.style.cssText = 'display:flex;gap:0.25rem;padding:0.75rem 1.5rem 0;border-bottom:1px solid rgba(255,255,255,0.06);flex-shrink:0;';
@@ -54,8 +55,7 @@ export function SettingsModal(onClose) {
                 <label style="display:block;font-size:0.75rem;color:rgba(255,255,255,0.5);margin-bottom:0.4rem;font-weight:600;">Muapi API Key</label>
                 <input id="settings-api-key" type="password"
                     style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:0.75rem;padding:0.6rem 0.9rem;color:#fff;font-size:0.875rem;outline:none;"
-                    placeholder="Enter your Muapi API key..."
-                    value="${localStorage.getItem('muapi_key') || ''}">
+                    placeholder="Enter your Muapi API key...">
             </div>
             <p style="font-size:0.7rem;color:rgba(255,255,255,0.3);margin:0;">
                 Your API key is stored locally and never sent anywhere except api.muapi.ai.
@@ -66,6 +66,7 @@ export function SettingsModal(onClose) {
             </div>
         </div>
     `;
+    apiPanel.querySelector('#settings-api-key').value = localStorage.getItem('muapi_key') || '';
 
     // ── Tab: Local Models ─────────────────────────────────────────────────────
     const localPanel = LocalModelManager();
@@ -90,7 +91,7 @@ export function SettingsModal(onClose) {
         if (id === 'local') body.appendChild(localPanel);
     };
 
-    switchTab('api');
+    switchTab(activeTab);
 
     // ── API key save/cancel handlers ──────────────────────────────────────────
     const close = () => {
@@ -105,7 +106,7 @@ export function SettingsModal(onClose) {
             localStorage.setItem('muapi_key', key);
             close();
         } else {
-            alert('Please enter a valid API key.');
+            showToast('Please enter a valid API key.', { type: 'warning' });
         }
     };
 

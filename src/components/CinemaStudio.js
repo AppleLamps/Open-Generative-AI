@@ -3,6 +3,7 @@ import { muapi } from '../lib/muapi.js';
 import { CameraControls } from './CameraControls.js';
 import { buildNanoBananaPrompt, CAMERA_MAP, LENS_MAP, FOCAL_PERSPECTIVE, APERTURE_EFFECT } from '../lib/promptUtils.js';
 import { AuthModal } from './AuthModal.js';
+import { showToast } from '../lib/toast.js';
 
 export function CinemaStudio() {
     const container = document.createElement('div');
@@ -17,7 +18,7 @@ export function CinemaStudio() {
         focal: 35,
         aperture: "f/1.4"
     };
-    
+
     // Camera builder panel state
     let showCameraBuilder = false;
 
@@ -28,7 +29,7 @@ export function CinemaStudio() {
     heroSection.className = 'flex flex-col items-center justify-center text-center px-4 animate-fade-in-up';
     heroSection.innerHTML = `
         <div class="mb-4 text-xs font-bold text-white/40 tracking-[0.2em] uppercase">Cinema Studio 2.0</div>
-        <h1 class="text-4xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-white/50 tracking-tight leading-tight mb-2">
+        <h1 class="text-4xl md:text-6xl font-black text-transparent bg-clip-text bg-linear-to-b from-white to-white/50 tracking-tight leading-tight mb-2">
             What would you shoot<br>with infinite budget?
         </h1>
     `;
@@ -183,7 +184,7 @@ export function CinemaStudio() {
         createDropdown(['1K', '2K', '4K'], resBtn.dataset.value, (val) => { updateResBtn(val); }, resBtn);
     };
     settingsToolbar.appendChild(resBtn);
-    
+
     // Camera Builder Toggle Button
     const cameraBuilderBtn = document.createElement('button');
     cameraBuilderBtn.className = 'flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold text-white/50 hover:text-white transition-colors bg-white/5 hover:bg-white/10 rounded-lg border border-white/5';
@@ -251,10 +252,10 @@ export function CinemaStudio() {
     const cameraBuilderPanel = document.createElement('div');
     cameraBuilderPanel.className = 'absolute bottom-8 left-4 right-4 md:left-1/2 md:-translate-x-1/2 md:w-full md:max-w-4xl z-20';
     cameraBuilderPanel.style.display = 'none'; // Hidden by default
-    
+
     const builderCard = document.createElement('div');
     builderCard.className = 'bg-[#1a1a1a] border border-white/10 rounded-2xl p-4 shadow-3xl';
-    
+
     builderCard.innerHTML = `
         <div class="flex items-center justify-between mb-4">
             <h4 class="text-xs font-bold text-white">Camera Builder</h4>
@@ -292,54 +293,54 @@ export function CinemaStudio() {
         
         <div class="flex flex-col gap-2">
             <label class="text-[10px] font-bold text-muted uppercase">Preview</label>
-            <div id="builder-preview" class="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white text-xs min-h-[40px]"></div>
+            <div id="builder-preview" class="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white text-xs min-h-10"></div>
             <button id="apply-builder-btn" class="px-4 py-2 bg-primary text-black rounded-lg text-xs font-bold hover:shadow-glow transition-all">
                 Use This Setup
             </button>
         </div>
     `;
-    
+
     cameraBuilderPanel.appendChild(builderCard);
     container.appendChild(cameraBuilderPanel);
-    
+
     // Camera Builder toggle logic
     cameraBuilderBtn.onclick = () => {
         showCameraBuilder = !showCameraBuilder;
         cameraBuilderPanel.style.display = showCameraBuilder ? 'block' : 'none';
         if (showCameraBuilder) updateBuilderPreview();
     };
-    
+
     const closeBuilderBtn = cameraBuilderPanel.querySelector('#close-builder-btn');
     if (closeBuilderBtn) closeBuilderBtn.onclick = () => {
         showCameraBuilder = false;
         cameraBuilderPanel.style.display = 'none';
     };
-    
+
     // Update builder preview
     const updateBuilderPreview = () => {
         const camera = builderCard.querySelector('#builder-camera')?.value || currentSettings.camera;
         const lens = builderCard.querySelector('#builder-lens')?.value || currentSettings.lens;
         const focal = parseInt(builderCard.querySelector('#builder-focal')?.value || currentSettings.focal);
         const aperture = builderCard.querySelector('#builder-aperture')?.value || currentSettings.aperture;
-        
+
         const preview = buildNanoBananaPrompt('', camera, lens, focal, aperture);
         const previewEl = builderCard.querySelector('#builder-preview');
         if (previewEl) {
             previewEl.textContent = preview || 'Select camera settings to see preview...';
         }
     };
-    
+
     // Builder event listeners
     const builderCamera = builderCard.querySelector('#builder-camera');
     const builderLens = builderCard.querySelector('#builder-lens');
     const builderFocal = builderCard.querySelector('#builder-focal');
     const builderAperture = builderCard.querySelector('#builder-aperture');
-    
+
     if (builderCamera) builderCamera.onchange = updateBuilderPreview;
     if (builderLens) builderLens.onchange = updateBuilderPreview;
     if (builderFocal) builderFocal.onchange = updateBuilderPreview;
     if (builderAperture) builderAperture.onchange = updateBuilderPreview;
-    
+
     const applyBuilderBtn = builderCard.querySelector('#apply-builder-btn');
     if (applyBuilderBtn) {
         applyBuilderBtn.onclick = () => {
@@ -583,7 +584,7 @@ export function CinemaStudio() {
 
         } catch (e) {
             console.error(e);
-            alert('Generation Failed: ' + e.message);
+            showToast(`Generation failed: ${e.message.slice(0, 160)}`, { type: 'error', duration: 5000 });
         } finally {
             generateBtn.disabled = false;
             generateBtn.innerHTML = `GENERATE ✨`;

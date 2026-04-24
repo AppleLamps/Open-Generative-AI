@@ -17,10 +17,30 @@ function tagEl(text) {
     return span;
 }
 
+function formatProgress(progress) {
+    return `${Math.round(Math.max(0, Math.min(1, Number.isFinite(progress) ? progress : 0)) * 100)}%`;
+}
+
+function phaseLabel(phase, progress) {
+    const pct = formatProgress(progress);
+    const labels = {
+        'fetching-release': 'Finding the right engine build...',
+        downloading: `Downloading... ${pct}`,
+        extracting: 'Installing files...',
+        'downloading-cudart': `Downloading GPU support files... ${pct}`,
+        'extracting-cudart': 'Installing GPU support files...',
+        done: 'Complete',
+    };
+    return labels[phase] || `Working... ${pct}`;
+}
+
 // ─── Binary Status Bar ────────────────────────────────────────────────────────
 function BinaryStatusBar(onStatusChange) {
     const bar = document.createElement('div');
-    bar.className = 'flex items-center justify-between gap-3 p-3 rounded-xl bg-white/3 border border-white/5';
+    bar.className = 'flex flex-col gap-2 p-3 rounded-xl bg-white/3 border border-white/5';
+
+    const topRow = document.createElement('div');
+    topRow.className = 'flex items-center justify-between gap-3';
 
     const label = document.createElement('div');
     label.className = 'flex flex-col gap-0.5';
@@ -34,8 +54,19 @@ function BinaryStatusBar(onStatusChange) {
     btn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all hidden';
     btn.textContent = 'Install';
 
-    bar.appendChild(label);
-    bar.appendChild(btn);
+    const cancelBtn = document.createElement('button');
+    cancelBtn.id = 'binary-cancel-btn';
+    cancelBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold bg-white/5 text-white/60 hover:bg-white/10 transition-all hidden';
+    cancelBtn.textContent = 'Cancel';
+
+    const actions = document.createElement('div');
+    actions.className = 'flex items-center gap-2 shrink-0';
+    actions.appendChild(btn);
+    actions.appendChild(cancelBtn);
+
+    topRow.appendChild(label);
+    topRow.appendChild(actions);
+    bar.appendChild(topRow);
 
     const progressBar = document.createElement('div');
     progressBar.className = 'h-1 rounded-full bg-white/5 mt-2 hidden overflow-hidden';
@@ -50,40 +81,53 @@ function BinaryStatusBar(onStatusChange) {
             text.textContent = 'Installed and ready';
             text.className = 'text-[11px] text-green-400';
             btn.classList.add('hidden');
+            cancelBtn.classList.add('hidden');
         } else {
             text.textContent = 'Not installed — required for local generation';
             text.className = 'text-[11px] text-yellow-400';
             btn.textContent = 'Install Engine';
             btn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-black transition-all';
+            btn.disabled = false;
             btn.classList.remove('hidden');
         }
         if (onStatusChange) onStatusChange(status.exists);
     };
 
+    cancelBtn.onclick = async () => {
+        cancelBtn.disabled = true;
+        cancelBtn.textContent = 'Cancelling...';
+        await localAI.cancelDownload('__binary__');
+    };
+
     btn.onclick = async () => {
         btn.disabled = true;
         btn.textContent = 'Downloading...';
+        cancelBtn.disabled = false;
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.classList.remove('hidden');
         progressBar.classList.remove('hidden');
 
         const unsub = localAI.onDownloadProgress(({ id, phase, progress }) => {
             if (id !== '__binary__') return;
             const fill = document.getElementById('binary-progress-fill');
             const text = bar.querySelector('#binary-status-text');
-            if (fill) fill.style.width = `${Math.round(progress * 100)}%`;
-            if (text) text.textContent = phase === 'extracting' ? 'Extracting...' : `Downloading... ${Math.round(progress * 100)}%`;
+            if (fill) fill.style.width = formatProgress(progress);
+            if (text) text.textContent = phaseLabel(phase, progress);
         });
 
         try {
             await localAI.downloadBinary();
             unsub();
             progressBar.classList.add('hidden');
+            cancelBtn.classList.add('hidden');
             await refresh();
         } catch (err) {
             unsub();
             const text = bar.querySelector('#binary-status-text');
-            if (text) text.textContent = `Error: ${err.message}`;
+            if (text) text.textContent = err.message === 'Download cancelled.' ? 'Download cancelled' : `Error: ${err.message}`;
             btn.disabled = false;
             btn.textContent = 'Retry';
+            cancelBtn.classList.add('hidden');
         }
     };
 
@@ -102,14 +146,15 @@ function AuxRow(label, auxKey, initStatus, onStateChange) {
     row.innerHTML = `
         <div class="flex items-center gap-2 min-w-0">
             ${isReady
-                ? `<span class="text-green-400 shrink-0">${CheckIcon}</span>`
-                : `<span class="text-yellow-400 shrink-0">!</span>`}
+            ? `<span class="text-green-400 shrink-0">${CheckIcon}</span>`
+            : `<span class="text-yellow-400 shrink-0">!</span>`}
             <span class="text-[11px] text-white truncate">${label}</span>
         </div>
         <div class="flex items-center gap-2 shrink-0">
             ${isReady
-                ? `<span class="text-[10px] text-green-400">Ready</span>`
-                : `<button class="aux-dl-btn flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30 transition-all">${DownloadIcon} Get</button>`}
+            ? `<span class="text-[10px] text-green-400">Ready</span>`
+            : `<button class="aux-dl-btn flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30 transition-all">${DownloadIcon} Get</button>
+                   <button class="aux-cancel-btn hidden px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white/5 text-white/60 hover:bg-white/10 transition-all">Cancel</button>`}
         </div>
         <div class="aux-progress hidden w-full col-span-2 mt-1">
             <div class="h-1 rounded-full bg-white/10 overflow-hidden">
@@ -120,31 +165,46 @@ function AuxRow(label, auxKey, initStatus, onStateChange) {
     `;
 
     const btn = row.querySelector('.aux-dl-btn');
+    const cancelBtn = row.querySelector('.aux-cancel-btn');
     if (btn) {
         btn.onclick = async () => {
             btn.disabled = true;
             btn.innerHTML = `<span class="animate-spin">◌</span>`;
+            if (cancelBtn) {
+                cancelBtn.disabled = false;
+                cancelBtn.textContent = 'Cancel';
+                cancelBtn.classList.remove('hidden');
+            }
             const progWrap = row.querySelector('.aux-progress');
             const progFill = row.querySelector('.aux-fill');
             const progText = row.querySelector('.aux-text');
             progWrap.classList.remove('hidden');
 
             const auxId = auxKey === 'llm' ? '__llm__' : '__vae__';
+            if (cancelBtn) {
+                cancelBtn.onclick = async () => {
+                    cancelBtn.disabled = true;
+                    cancelBtn.textContent = 'Cancelling...';
+                    await localAI.cancelDownload(auxId);
+                };
+            }
             const unsub = localAI.onDownloadProgress(({ id, phase, progress }) => {
                 if (id !== auxId) return;
-                progFill.style.width = `${Math.round(progress * 100)}%`;
-                progText.textContent = phase === 'done' ? 'Complete!' : `Downloading... ${Math.round(progress * 100)}%`;
+                progFill.style.width = formatProgress(progress);
+                progText.textContent = phaseLabel(phase, progress);
             });
 
             try {
                 await localAI.downloadAuxiliary(auxKey);
                 unsub();
+                if (cancelBtn) cancelBtn.classList.add('hidden');
                 if (onStateChange) onStateChange();
             } catch (err) {
                 unsub();
-                progText.textContent = `Error: ${err.message}`;
+                progText.textContent = err.message === 'Download cancelled.' ? 'Download cancelled' : `Error: ${err.message}`;
                 btn.disabled = false;
                 btn.innerHTML = `${DownloadIcon} Retry`;
+                if (cancelBtn) cancelBtn.classList.add('hidden');
             }
         };
     }
@@ -179,9 +239,10 @@ function ModelCard(model, onStateChange) {
             </div>
             <div class="flex items-center gap-2 shrink-0">
                 ${isDownloaded
-                    ? `<button class="delete-btn p-2 rounded-lg text-red-400 hover:bg-red-500/10 transition-all">${TrashIcon}</button>`
-                    : `<button class="download-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-black hover:shadow-glow transition-all">${DownloadIcon} Download</button>`
-                }
+            ? `<button class="delete-btn p-2 rounded-lg text-red-400 hover:bg-red-500/10 transition-all">${TrashIcon}</button>`
+            : `<button class="download-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-black hover:shadow-glow transition-all">${DownloadIcon} Download</button>
+                       <button class="cancel-download-btn hidden px-3 py-1.5 rounded-lg text-xs font-bold bg-white/5 text-white/60 hover:bg-white/10 transition-all">Cancel</button>`
+        }
             </div>
         </div>
         <div class="progress-wrap hidden">
@@ -207,27 +268,40 @@ function ModelCard(model, onStateChange) {
     const progressText = card.querySelector('.progress-text');
 
     const downloadBtn = card.querySelector('.download-btn');
+    const cancelDownloadBtn = card.querySelector('.cancel-download-btn');
     if (downloadBtn) {
         downloadBtn.onclick = async () => {
             downloadBtn.disabled = true;
             downloadBtn.innerHTML = `<span class="animate-spin">◌</span> Starting...`;
+            if (cancelDownloadBtn) {
+                cancelDownloadBtn.disabled = false;
+                cancelDownloadBtn.textContent = 'Cancel';
+                cancelDownloadBtn.classList.remove('hidden');
+                cancelDownloadBtn.onclick = async () => {
+                    cancelDownloadBtn.disabled = true;
+                    cancelDownloadBtn.textContent = 'Cancelling...';
+                    await localAI.cancelDownload(model.id);
+                };
+            }
             progressWrap.classList.remove('hidden');
 
             const unsub = localAI.onDownloadProgress(({ id, phase, progress }) => {
                 if (id !== model.id) return;
-                progressFill.style.width = `${Math.round(progress * 100)}%`;
-                progressText.textContent = phase === 'done' ? 'Complete!' : `Downloading... ${Math.round(progress * 100)}%`;
+                progressFill.style.width = formatProgress(progress);
+                progressText.textContent = phaseLabel(phase, progress);
             });
 
             try {
                 await localAI.downloadModel(model.id);
                 unsub();
+                if (cancelDownloadBtn) cancelDownloadBtn.classList.add('hidden');
                 if (onStateChange) onStateChange();
             } catch (err) {
                 unsub();
-                progressText.textContent = `Error: ${err.message}`;
+                progressText.textContent = err.message === 'Download cancelled.' ? 'Download cancelled' : `Error: ${err.message}`;
                 downloadBtn.disabled = false;
                 downloadBtn.innerHTML = `${DownloadIcon} Retry`;
+                if (cancelDownloadBtn) cancelDownloadBtn.classList.add('hidden');
             }
         };
     }
@@ -264,9 +338,20 @@ export function LocalModelManager() {
     engineSection.className = 'flex flex-col gap-2';
     engineSection.innerHTML = `<h3 class="text-xs font-bold text-secondary uppercase tracking-wider">Inference Engine</h3>`;
 
-    let binaryReady = false;
-    const binaryBar = BinaryStatusBar((ready) => { binaryReady = ready; });
+    const setupHint = document.createElement('div');
+    setupHint.className = 'rounded-xl border border-white/5 bg-white/3 px-3 py-2 text-[11px] leading-relaxed text-muted';
+    setupHint.textContent = 'Install the engine first, then download a local model. Z-Image models also need the listed required components.';
+
+    const binaryBar = BinaryStatusBar((ready) => {
+        setupHint.textContent = ready
+            ? 'Engine is ready. Download a model below, including required components when shown, then choose Local in Image Studio.'
+            : 'Install the engine first, then download a local model. Z-Image models also need the listed required components.';
+        setupHint.className = ready
+            ? 'rounded-xl border border-green-500/20 bg-green-500/5 px-3 py-2 text-[11px] leading-relaxed text-green-300/80'
+            : 'rounded-xl border border-white/5 bg-white/3 px-3 py-2 text-[11px] leading-relaxed text-muted';
+    });
     engineSection.appendChild(binaryBar);
+    engineSection.appendChild(setupHint);
     root.appendChild(engineSection);
 
     // ── Section: models
@@ -284,10 +369,19 @@ export function LocalModelManager() {
     const listEl = modelsSection.querySelector('#local-model-list');
 
     const renderModels = async () => {
-        listEl.innerHTML = `<div class="text-xs text-muted text-center py-4">Loading...</div>`;
+        listEl.innerHTML = `
+            <div class="flex flex-col gap-2 py-4">
+                <div class="h-16 rounded-xl bg-white/5 animate-pulse"></div>
+                <div class="h-16 rounded-xl bg-white/5 animate-pulse opacity-60"></div>
+            </div>
+        `;
         try {
             const models = await localAI.listModels();
             listEl.innerHTML = '';
+            if (models.length === 0) {
+                listEl.innerHTML = `<div class="text-xs text-muted text-center py-4">No local models are configured for this build.</div>`;
+                return;
+            }
             models.forEach(m => {
                 listEl.appendChild(ModelCard(m, renderModels));
             });

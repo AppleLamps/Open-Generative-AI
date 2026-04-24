@@ -8,6 +8,7 @@ import { localAI, isLocalAIAvailable } from '../lib/localInferenceClient.js';
 import { LOCAL_MODEL_CATALOG, getLocalModelById } from '../lib/localModels.js';
 import { ENHANCE_TAGS, QUICK_PROMPTS } from '../lib/promptUtils.js';
 import { AuthModal } from './AuthModal.js';
+import { SettingsModal } from './SettingsModal.js';
 import { createUploadPicker } from './UploadPicker.js';
 import { savePendingJob, removePendingJob, getPendingJobs } from '../lib/pendingJobs.js';
 import { showToast } from '../lib/toast.js';
@@ -43,6 +44,7 @@ export function ImageStudio() {
     let isGeneratingLocally = false;
     let activeWarmModelId = null;
     let warmHideTimer = null;
+    let localSetupPromptOpen = false;
 
     // Advanced parameters state
     let negativePrompt = '';
@@ -307,6 +309,35 @@ export function ImageStudio() {
         return `${Math.round(bytes / (1024 ** 2))} MB`;
     };
 
+    const openLocalModelSettings = () => {
+        if (localSetupPromptOpen) return;
+        localSetupPromptOpen = true;
+        document.body.appendChild(SettingsModal(() => { localSetupPromptOpen = false; }, 'local'));
+    };
+
+    const getLocalSetupIssue = async (modelId = selectedLocalModel) => {
+        const lm = getLocalModelById(modelId);
+        if (!lm) return 'Choose a local model first.';
+
+        const binary = await localAI.getBinaryStatus();
+        if (!binary.exists) return 'Install the local inference engine before using Local mode.';
+
+        const models = await localAI.listModels();
+        const modelState = models.find((model) => model.id === modelId);
+        if (!modelState || modelState.state !== 'downloaded') {
+            return `Download ${lm.name} before using it locally.`;
+        }
+
+        if (modelState.requiresAuxiliary) {
+            const aux = modelState.auxiliaryStatus || {};
+            if (aux.llm !== 'downloaded' || aux.vae !== 'downloaded') {
+                return `${lm.name} needs its required components before generation.`;
+            }
+        }
+
+        return null;
+    };
+
     const setLocalProgress = ({ label, progress = 0, showCancel = false }) => {
         const progressFill = document.getElementById('local-progress-fill');
         const progressPct = document.getElementById('local-progress-pct');
@@ -322,10 +353,20 @@ export function ImageStudio() {
         if (cancelBtn) cancelBtn.style.display = showCancel ? '' : 'none';
     };
 
-    const startWarmSelectedLocalModel = (modelId = selectedLocalModel) => {
+    const startWarmSelectedLocalModel = async (modelId = selectedLocalModel) => {
         if (!useLocalModel || !modelId || !isLocalAIAvailable()) return;
         const lm = getLocalModelById(modelId);
         if (!lm) return;
+
+        const setupIssue = await getLocalSetupIssue(modelId);
+        if (!useLocalModel || selectedLocalModel !== modelId) return;
+        if (setupIssue) {
+            showToast(setupIssue, { type: 'warning', duration: 5000 });
+            localProgressWrap.classList.add('hidden');
+            localProgressWrap.classList.remove('flex');
+            openLocalModelSettings();
+            return;
+        }
 
         activeWarmModelId = modelId;
         clearTimeout(warmHideTimer);
@@ -434,9 +475,6 @@ export function ImageStudio() {
             </div>
         </div>
     `;
-
-    container.appendChild(toolsPanel);
-
     // ==========================================
     // 4. ADVANCED OPTIONS PANEL
     // ==========================================
@@ -558,8 +596,6 @@ export function ImageStudio() {
             </div>
         </div>
     `;
-    container.appendChild(advancedPanel);
-
     // Advanced panel toggle logic
     const toggleAdvanced = () => {
         showAdvanced = !showAdvanced;
@@ -1250,6 +1286,13 @@ export function ImageStudio() {
         if (useLocalModel) {
             const lm = getLocalModelById(selectedLocalModel);
             if (!lm) { showToast('No local model selected.', { type: 'warning' }); return; }
+
+            const setupIssue = await getLocalSetupIssue(selectedLocalModel);
+            if (setupIssue) {
+                showToast(setupIssue, { type: 'warning', duration: 5000 });
+                openLocalModelSettings();
+                return;
+            }
 
             hero.classList.add('opacity-0', 'scale-95', '-translate-y-10', 'pointer-events-none');
             generateBtn.disabled = true;

@@ -3,6 +3,7 @@ import { lipsyncModels, imageLipSyncModels, videoLipSyncModels, getLipSyncModelB
 import { AuthModal } from './AuthModal.js';
 import { createUploadPicker } from './UploadPicker.js';
 import { savePendingJob, removePendingJob, getPendingJobs } from '../lib/pendingJobs.js';
+import { showToast } from '../lib/toast.js';
 
 export function LipSyncStudio() {
     const container = document.createElement('div');
@@ -174,7 +175,10 @@ export function LipSyncStudio() {
         try {
             uploadedVideoUrl = await muapi.uploadFile(file);
             showVideoReady(file.name);
-        } catch (err) { showVideoIcon(); alert(`Video upload failed: ${err.message}`); }
+        } catch (err) {
+            showVideoIcon();
+            showToast(`Video upload failed: ${err.message.slice(0, 160)}`, { type: 'error', duration: 5000 });
+        }
         videoFileInput.value = '';
     };
 
@@ -242,7 +246,10 @@ export function LipSyncStudio() {
         try {
             uploadedAudioUrl = await muapi.uploadFile(file);
             showAudioReady(file.name);
-        } catch (err) { showAudioIcon(); alert(`Audio upload failed: ${err.message}`); }
+        } catch (err) {
+            showAudioIcon();
+            showToast(`Audio upload failed: ${err.message.slice(0, 160)}`, { type: 'error', duration: 5000 });
+        }
         audioFileInput.value = '';
     };
 
@@ -655,15 +662,15 @@ export function LipSyncStudio() {
 
         // Validation
         if (!uploadedAudioUrl) {
-            alert('Please upload an audio file first.');
+            showToast('Please upload an audio file first.', { type: 'warning' });
             return;
         }
         if (inputMode === 'image' && !uploadedImageUrl) {
-            alert('Please upload a portrait image first.');
+            showToast('Please upload a portrait image first.', { type: 'warning' });
             return;
         }
         if (inputMode === 'video' && !uploadedVideoUrl) {
-            alert('Please upload a source video first.');
+            showToast('Please upload a source video first.', { type: 'warning' });
             return;
         }
 

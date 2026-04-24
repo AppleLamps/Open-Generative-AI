@@ -34,6 +34,11 @@ class LocalInferenceClient {
         return window.localAI.downloadAuxiliary(auxKey);
     }
 
+    async cancelDownload(downloadId) {
+        if (!isLocalAIAvailable()) return { ok: false };
+        return window.localAI.cancelDownload(downloadId);
+    }
+
     async deleteModel(modelId) {
         if (!isLocalAIAvailable()) throw new Error('Local AI only available in the desktop app.');
         return window.localAI.deleteModel(modelId);
@@ -58,7 +63,7 @@ class LocalInferenceClient {
      * @returns unsubscribe function
      */
     onProgress(callback) {
-        if (!isLocalAIAvailable()) return () => {};
+        if (!isLocalAIAvailable()) return () => { };
         return window.localAI.onProgress(callback);
     }
 
@@ -68,12 +73,12 @@ class LocalInferenceClient {
      * @returns unsubscribe function
      */
     onDownloadProgress(callback) {
-        if (!isLocalAIAvailable()) return () => {};
+        if (!isLocalAIAvailable()) return () => { };
         return window.localAI.onDownloadProgress(callback);
     }
 
     onWarmProgress(callback) {
-        if (!isLocalAIAvailable()) return () => {};
+        if (!isLocalAIAvailable()) return () => { };
         return window.localAI.onWarmProgress(callback);
     }
 }

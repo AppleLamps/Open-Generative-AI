@@ -30,7 +30,16 @@ export function showToast(message, { type = 'error', duration = 4000 } = {}) {
 
     const toast = document.createElement('div');
     toast.className = `pointer-events-auto flex items-center gap-3 px-5 py-3 rounded-2xl border backdrop-blur-xl shadow-xl text-sm font-medium max-w-md transition-all duration-300 opacity-0 translate-y-2 ${colors[type] || colors.info}`;
-    toast.innerHTML = `${icons[type] || icons.info}<span>${message}</span>`;
+
+    const icon = document.createElement('span');
+    icon.className = 'shrink-0';
+    icon.innerHTML = icons[type] || icons.info;
+
+    const text = document.createElement('span');
+    text.textContent = message;
+
+    toast.appendChild(icon);
+    toast.appendChild(text);
 
     container.appendChild(toast);
 
